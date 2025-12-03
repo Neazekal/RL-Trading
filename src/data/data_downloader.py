@@ -18,7 +18,7 @@ class DataDownloadError(Exception):
 
 
 class DataDownloader:
-    """Downloads OHLCV (Open, High, Low, Close, Volume) data from cryptocurrency exchanges."""
+    """Downloads OHLCV (Open, High, Low, Close, Volume) data from cryptocurrency futures exchanges."""
 
     # Rate limiting constants (milliseconds)
     DEFAULT_RATE_LIMIT = 1000  # 1 second between requests
@@ -30,14 +30,16 @@ class DataDownloader:
         exchange_name: str = "binance",
         rate_limit_ms: int = DEFAULT_RATE_LIMIT,
         data_dir: str = "data",
+        market_type: str = "future",
     ):
         """
-        Initialize DataDownloader with exchange connection.
+        Initialize DataDownloader with exchange connection for futures trading.
 
         Args:
             exchange_name: Name of the exchange (e.g., 'binance', 'bybit')
             rate_limit_ms: Rate limit in milliseconds between API calls
             data_dir: Directory to save downloaded data
+            market_type: Market type - 'future' for perpetual/futures, 'spot' for spot trading
 
         Raises:
             DataDownloadError: If exchange is not supported or connection fails
@@ -46,12 +48,22 @@ class DataDownloader:
         self.rate_limit_ms = rate_limit_ms
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.market_type = market_type.lower()
+
+        if self.market_type not in ["future", "spot"]:
+            raise DataDownloadError(f"Invalid market_type '{market_type}'. Must be 'future' or 'spot'")
 
         # Initialize exchange
         try:
             exchange_class = getattr(ccxt, self.exchange_name)
-            self.exchange = exchange_class({"enableRateLimit": True})
-            logger.info(f"Connected to {self.exchange_name} exchange")
+            exchange_config = {"enableRateLimit": True}
+            
+            # Configure for futures if needed
+            if self.market_type == "future":
+                exchange_config["options"] = {"defaultType": "future"}
+            
+            self.exchange = exchange_class(exchange_config)
+            logger.info(f"Connected to {self.exchange_name} exchange ({self.market_type} market)")
         except AttributeError:
             raise DataDownloadError(
                 f"Exchange '{self.exchange_name}' not supported. "
@@ -69,10 +81,10 @@ class DataDownloader:
         limit: int = 1000,
     ) -> pd.DataFrame:
         """
-        Download OHLCV data from exchange.
+        Download OHLCV data from futures exchange.
 
         Args:
-            symbol: Trading pair symbol (e.g., 'BTC/USDT')
+            symbol: Trading pair symbol (e.g., 'BTC/USDT:USDT' for futures, 'BTC/USDT' for spot)
             timeframe: Candlestick timeframe (e.g., '1m', '5m', '1h', '1d')
             start_date: Start date in format 'YYYY-MM-DD' (default: 1 year ago)
             end_date: End date in format 'YYYY-MM-DD' (default: today)
@@ -86,7 +98,9 @@ class DataDownloader:
         """
         # Validate symbol
         if not self._validate_symbol(symbol):
-            raise DataDownloadError(f"Symbol '{symbol}' not available on {self.exchange_name}")
+            raise DataDownloadError(
+                f"Symbol '{symbol}' not available on {self.exchange_name} ({self.market_type} market)"
+            )
 
         # Parse dates
         if start_date is None:
@@ -103,7 +117,7 @@ class DataDownloader:
             raise DataDownloadError("start_date must be before end_date")
 
         logger.info(
-            f"Downloading {symbol} {timeframe} data from {start_dt.date()} to {end_dt.date()}"
+            f"Downloading {symbol} {timeframe} data ({self.market_type}) from {start_dt.date()} to {end_dt.date()}"
         )
 
         all_candles = []
@@ -170,13 +184,13 @@ class DataDownloader:
         filename: Optional[str] = None,
     ) -> Path:
         """
-        Save downloaded data to CSV file.
+        Save downloaded futures data to CSV file.
 
         Args:
             data: DataFrame with OHLCV data
             symbol: Trading pair symbol (used in filename if not specified)
             timeframe: Candlestick timeframe (used in filename if not specified)
-            filename: Custom filename (default: {symbol}_{timeframe}.csv)
+            filename: Custom filename (default: {symbol}_{timeframe}_{market_type}.csv)
 
         Returns:
             Path to saved CSV file
@@ -186,15 +200,15 @@ class DataDownloader:
         """
         try:
             if filename is None:
-                # Create filename from symbol and timeframe
-                safe_symbol = symbol.replace("/", "_")
-                filename = f"{safe_symbol}_{timeframe}.csv"
+                # Create filename from symbol, timeframe, and market type
+                safe_symbol = symbol.replace("/", "_").replace(":", "_")
+                filename = f"{safe_symbol}_{timeframe}_{self.market_type}.csv"
 
             filepath = self.data_dir / filename
 
             # Save to CSV
             data.to_csv(filepath, index=False)
-            logger.info(f"Saved data to {filepath}")
+            logger.info(f"Saved {self.market_type} data to {filepath}")
 
             return filepath
 

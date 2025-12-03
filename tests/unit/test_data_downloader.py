@@ -15,12 +15,13 @@ class TestDataDownloaderInitialization:
     """Test DataDownloader initialization."""
 
     def test_init_with_default_exchange(self):
-        """Test initialization with default Binance exchange."""
+        """Test initialization with default Binance exchange for futures."""
         with patch("src.data.data_downloader.ccxt.binance"):
             downloader = DataDownloader()
             assert downloader.exchange_name == "binance"
             assert downloader.rate_limit_ms == 1000
             assert downloader.data_dir.name == "data"
+            assert downloader.market_type == "future"
 
     def test_init_with_custom_exchange(self):
         """Test initialization with custom exchange."""
@@ -52,6 +53,23 @@ class TestDataDownloaderInitialization:
         with patch("src.data.data_downloader.ccxt.binance"):
             downloader = DataDownloader(rate_limit_ms=500)
             assert downloader.rate_limit_ms == 500
+
+    def test_init_with_spot_market(self):
+        """Test initialization with spot market type."""
+        with patch("src.data.data_downloader.ccxt.binance"):
+            downloader = DataDownloader(market_type="spot")
+            assert downloader.market_type == "spot"
+
+    def test_init_with_future_market(self):
+        """Test initialization with future market type."""
+        with patch("src.data.data_downloader.ccxt.binance"):
+            downloader = DataDownloader(market_type="future")
+            assert downloader.market_type == "future"
+
+    def test_init_with_invalid_market_type(self):
+        """Test initialization with invalid market type raises error."""
+        with pytest.raises(DataDownloadError, match="Invalid market_type"):
+            DataDownloader(market_type="invalid")
 
 
 class TestDataDownloaderValidation:
@@ -234,10 +252,10 @@ class TestDataDownloaderSaveCSV:
     """Test CSV saving functionality."""
 
     def test_save_to_csv_default_filename(self):
-        """Test saving to CSV with default filename."""
+        """Test saving to CSV with default filename for futures."""
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch("src.data.data_downloader.ccxt.binance"):
-                downloader = DataDownloader(data_dir=tmpdir)
+                downloader = DataDownloader(data_dir=tmpdir, market_type="future")
 
                 df = pd.DataFrame({
                     "timestamp": [datetime(2021, 1, 1), datetime(2021, 1, 2)],
@@ -251,7 +269,7 @@ class TestDataDownloaderSaveCSV:
                 filepath = downloader.save_to_csv(df, "BTC/USDT", "1h")
 
                 assert filepath.exists()
-                assert filepath.name == "BTC_USDT_1h.csv"
+                assert filepath.name == "BTC_USDT_1h_future.csv"
                 assert filepath.parent == Path(tmpdir)
 
     def test_save_to_csv_custom_filename(self):
