@@ -1,0 +1,78 @@
+# RL Crypto Trading Agents - Default Configuration
+# This file contains all configurable parameters with documented defaults
+
+# Data Configuration
+data:
+  source: "binance"                    # Exchange source for market data
+  symbols:                             # Trading pairs to use
+    - "BTC/USDT"
+    - "ETH/USDT"
+  timeframe: "1h"                      # Candlestick timeframe (1m, 5m, 15m, 1h, 4h, 1d)
+  indicators:                          # Technical indicators to calculate
+    - "rsi"
+    - "macd"
+    - "ma_short"
+    - "ma_long"
+  ma_short_period: 20                  # Short moving average period
+  ma_long_period: 50                   # Long moving average period
+  rsi_period: 14                       # RSI calculation period
+
+# Environment Configuration
+environment:
+  initial_balance: 10000.0             # Starting balance in quote currency (USDT)
+  max_positions: 1                     # Maximum concurrent positions (single position constraint)
+  trading_fee: 0.001                   # Trading fee rate (0.1%)
+  slippage: 0.0005                     # Slippage rate (0.05%)
+
+# Agent Configuration (shared by both agents)
+agent:
+  learning_rate: 0.0003                # Learning rate for PPO optimizer
+  gamma: 0.99                          # Discount factor for future rewards
+  epsilon_start: 1.0                   # Initial exploration rate
+  epsilon_end: 0.01                    # Final exploration rate
+  epsilon_decay: 0.995                 # Exploration decay rate per episode
+  clip_ratio: 0.2                      # PPO clipping parameter
+
+# Neural Network Configuration
+network:
+  input_size: 12                       # Number of input features (OHLCV + indicators)
+  hidden_sizes:                        # Fully connected layer sizes
+    - 128
+    - 64
+  lstm_hidden_size: 64                 # LSTM hidden state size
+  lstm_num_layers: 2                   # Number of LSTM layers
+  # num_actions is set per agent: 3 for opening, 2 for closing
+
+# Training Configuration
+training:
+  num_episodes: 1000                   # Total training episodes
+  batch_size: 64                       # Mini-batch size for PPO updates
+  buffer_capacity: 10000               # Replay buffer maximum capacity
+  train_val_ratio: 0.8                 # Training/validation data split ratio
+  early_stopping_patience: 50          # Episodes without improvement before stopping
+  checkpoint_frequency: 100            # Save checkpoint every N episodes
+  ppo_epochs: 4                        # PPO update epochs per batch
+  gae_lambda: 0.95                     # GAE lambda for advantage estimation
+
+# Reward Configuration
+reward:
+  open_penalty: -0.001                 # Small negative reward for opening positions
+  profit_multiplier: 1.0               # Multiplier for profitable trade rewards
+  loss_multiplier: 1.0                 # Multiplier for losing trade penalties
+  discount_factor: 0.99                # Discount factor for future rewards
+
+# Signal Confirmation Configuration
+signal_confirmation:
+  required_confirmations: 3            # N consecutive signals required before execution
+  enabled: true                        # Whether confirmation layer is active
+
+# Backtesting Configuration
+backtesting:
+  start_date: "2023-01-01"             # Backtest start date
+  end_date: "2023-12-31"               # Backtest end date
+  initial_balance: 10000.0             # Starting balance for backtest
+
+# Model Persistence Configuration
+persistence:
+  checkpoint_dir: "checkpoints"        # Directory for model checkpoints
+  config_dir: "config"                 # Directory for configuration files

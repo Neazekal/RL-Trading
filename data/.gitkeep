@@ -1,0 +1,2 @@
+# This directory stores downloaded OHLCV market data (CSV files)
+# Files in this directory are gitignored
