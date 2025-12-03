@@ -8,8 +8,16 @@ from typing import Optional, List, Dict, Any
 
 import pandas as pd
 import ccxt
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
+
+# Timeframe to minutes mapping for estimating total candles
+TIMEFRAME_MINUTES = {
+    "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+    "1h": 60, "2h": 120, "4h": 240, "6h": 360, "8h": 480, "12h": 720,
+    "1d": 1440, "3d": 4320, "1w": 10080, "1M": 43200,
+}
 
 
 class DataDownloadError(Exception):
@@ -79,6 +87,7 @@ class DataDownloader:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         limit: int = 1000,
+        progress_callback: Optional[callable] = None,
     ) -> pd.DataFrame:
         """
         Download OHLCV data from futures exchange.
@@ -86,9 +95,10 @@ class DataDownloader:
         Args:
             symbol: Trading pair symbol (e.g., 'BTC/USDT:USDT' for futures, 'BTC/USDT' for spot)
             timeframe: Candlestick timeframe (e.g., '1m', '5m', '1h', '1d')
-            start_date: Start date in format 'YYYY-MM-DD' (default: 1 year ago)
+            start_date: Start date in format 'YYYY-MM-DD' (default: None = earliest available)
             end_date: End date in format 'YYYY-MM-DD' (default: today)
             limit: Maximum candles per request (default: 1000)
+            progress_callback: Optional callback function(downloaded_count) for progress updates
 
         Returns:
             DataFrame with columns: timestamp, open, high, low, close, volume
@@ -103,10 +113,14 @@ class DataDownloader:
             )
 
         # Parse dates
+        # If start_date is None, we'll fetch from a very old date to get all available data
+        # Most exchanges have data going back to 2017 at the earliest
         if start_date is None:
-            start_dt = datetime.now() - timedelta(days=365)
+            start_dt = datetime(2017, 1, 1)  # Start from 2017 to get all available data
+            since = int(start_dt.timestamp() * 1000)
         else:
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            since = int(start_dt.timestamp() * 1000)
 
         if end_date is None:
             end_dt = datetime.now()
@@ -116,40 +130,55 @@ class DataDownloader:
         if start_dt >= end_dt:
             raise DataDownloadError("start_date must be before end_date")
 
-        logger.info(
-            f"Downloading {symbol} {timeframe} data ({self.market_type}) from {start_dt.date()} to {end_dt.date()}"
-        )
+        # Estimate total candles based on date range and timeframe
+        tf_minutes = TIMEFRAME_MINUTES.get(timeframe, 60)
+        total_minutes = (end_dt - start_dt).total_seconds() / 60
+        estimated_total = int(total_minutes / tf_minutes)
 
         all_candles = []
-        current_dt = start_dt
+        current_since = since
 
-        while current_dt < end_dt:
-            try:
-                # Convert to milliseconds for CCXT
-                since = int(current_dt.timestamp() * 1000)
+        # Create progress bar
+        with tqdm(total=estimated_total, desc=f"{symbol} {timeframe}", unit="candles") as pbar:
+            while True:
+                try:
+                    # Fetch with retry logic
+                    candles = self._fetch_with_retry(symbol, timeframe, current_since, limit)
 
-                # Fetch with retry logic
-                candles = self._fetch_with_retry(symbol, timeframe, since, limit)
+                    if not candles:
+                        break
 
-                if not candles:
-                    logger.warning(f"No data returned for {symbol} at {current_dt}")
-                    break
+                    all_candles.extend(candles)
+                    
+                    # Update progress bar
+                    pbar.n = len(all_candles)
+                    pbar.refresh()
+                    
+                    # Call progress callback if provided
+                    if progress_callback:
+                        progress_callback(len(all_candles))
 
-                all_candles.extend(candles)
+                    # Move to next batch
+                    last_candle_time = candles[-1][0]
+                    last_candle_dt = datetime.fromtimestamp(last_candle_time / 1000)
 
-                # Move to next batch
-                last_candle_time = candles[-1][0]
-                current_dt = datetime.fromtimestamp(last_candle_time / 1000)
+                    # Stop if we've reached end date
+                    if last_candle_dt >= end_dt:
+                        break
 
-                # Stop if we've reached end date
-                if current_dt >= end_dt:
-                    break
+                    # Update since for next iteration
+                    current_since = last_candle_time + 1
 
-                # Rate limiting
-                time.sleep(self.rate_limit_ms / 1000.0)
+                    # Rate limiting
+                    time.sleep(self.rate_limit_ms / 1000.0)
 
-            except Exception as e:
-                raise DataDownloadError(f"Failed to download {symbol} data: {str(e)}")
+                except Exception as e:
+                    raise DataDownloadError(f"Failed to download {symbol} data: {str(e)}")
+            
+            # Update progress bar to final count
+            pbar.n = len(all_candles)
+            pbar.total = len(all_candles)
+            pbar.refresh()
 
         if not all_candles:
             raise DataDownloadError(f"No data downloaded for {symbol}")
