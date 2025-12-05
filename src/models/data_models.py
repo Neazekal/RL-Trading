@@ -136,8 +136,12 @@ class DataConfig:
 @dataclass
 class EnvConfig:
     """Configuration for the trading environment."""
-    initial_balance: float
-    max_positions: int = 1  # Single position constraint
+    initial_capital: float          # Starting capital (e.g., 10000 USDT)
+    risk_per_trade: float           # Risk % per trade (e.g., 0.02 = 2%)
+    leverage: float                 # Leverage multiplier (e.g., 10x for futures)
+    max_positions: int = 1          # Single position constraint
+    trading_fee: float = 0.0004     # Trading fee rate (e.g., 0.04% for futures)
+    slippage: float = 0.0001        # Slippage rate
     trading_fee: float = 0.001
     slippage: float = 0.0005
 
