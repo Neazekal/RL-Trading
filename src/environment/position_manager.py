@@ -30,7 +30,9 @@ class PositionManager:
         direction: str,
         price: float,
         size: float,
-        entry_time: Optional[datetime] = None
+        entry_time: Optional[datetime] = None,
+        stop_loss_price: Optional[float] = None,
+        take_profit_price: Optional[float] = None
     ) -> Position:
         """
         Open a new position.
@@ -40,6 +42,8 @@ class PositionManager:
             price: Entry price
             size: Position size (quantity)
             entry_time: Entry timestamp (defaults to now)
+            stop_loss_price: Fixed SL price (calculated at entry, does not change)
+            take_profit_price: Fixed TP price (calculated at entry, does not change)
             
         Returns:
             The created Position object
@@ -60,7 +64,9 @@ class PositionManager:
             direction=direction,
             entry_price=price,
             entry_time=entry_time or datetime.now(),
-            size=size
+            size=size,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price
         )
         self._positions[position_id] = position
         return position

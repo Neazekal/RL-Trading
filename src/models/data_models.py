@@ -70,6 +70,9 @@ class Position:
     entry_price: float
     entry_time: datetime
     size: float
+    # Fixed SL/TP prices calculated at entry (optional, for ATR-based SL/TP)
+    stop_loss_price: Optional[float] = None
+    take_profit_price: Optional[float] = None
 
 
 @dataclass

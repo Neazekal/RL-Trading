@@ -499,7 +499,7 @@ class DataProcessor:
             data: DataFrame with processed data (indicators and/or features).
             output_path: Path to save the CSV file.
             features_only: If True, save only the feature columns used by the model
-                          (plus timestamp and optionally close for P&L).
+                          (plus timestamp, close for P&L, and atr for SL/TP).
             include_close: If True and features_only=True, include close price
                           for environment P&L calculation.
         
@@ -507,10 +507,12 @@ class DataProcessor:
             Path to the saved file.
         """
         if features_only:
-            # Save timestamp, features, and optionally close for P&L
+            # Save timestamp, features, close for P&L, and atr for SL/TP calculation
             cols_to_save = ['timestamp'] + self.FEATURE_COLUMNS
             if include_close:
                 cols_to_save.append('close')
+            # Always include raw ATR for environment SL/TP calculation
+            cols_to_save.append('atr')
             available_cols = [c for c in cols_to_save if c in data.columns]
             data[available_cols].to_csv(output_path, index=False)
         else:

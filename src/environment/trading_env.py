@@ -95,6 +95,12 @@ class TradingEnvironment(gym.Env):
         self.trading_fee = config.trading_fee
         self.slippage = config.slippage
         
+        # ATR-based SL/TP configuration (fixed at entry time)
+        # Default: 1.5x ATR for SL, 3x ATR for TP (1:2 ratio, max 1:3)
+        self.use_atr_sl_tp = True
+        self.atr_sl_multiplier = 1.5
+        self.atr_tp_multiplier = 3.0
+        
         # Position manager
         self.position_manager = PositionManager(trading_fee=self.trading_fee)
         
@@ -195,7 +201,9 @@ class TradingEnvironment(gym.Env):
             "step": self.current_step,
             "action_taken": action_taken,
             "trade_result": trade_result,
-            "cumulative_reward": self.cumulative_reward
+            "cumulative_reward": self.cumulative_reward,
+            "current_price": current_price,
+            "atr": self.get_current_atr()  # For dynamic SL/TP calculation
         }
         
         return observation, reward, terminated, truncated, info
@@ -238,11 +246,16 @@ class TradingEnvironment(gym.Env):
                     slippage_multiplier = 1 + self.slippage if direction == "long" else 1 - self.slippage
                     entry_price = current_price * slippage_multiplier
                     
-                    # Open position
+                    # Calculate fixed SL/TP prices at entry using ATR
+                    sl_price, tp_price = self._calculate_entry_sl_tp(entry_price, direction)
+                    
+                    # Open position with fixed SL/TP
                     self.current_position = self.position_manager.open_position(
                         direction=direction,
                         price=entry_price,
-                        size=position_size
+                        size=position_size,
+                        stop_loss_price=sl_price,
+                        take_profit_price=tp_price
                     )
                     
                     action_taken = f"open_{direction}"
@@ -333,6 +346,43 @@ class TradingEnvironment(gym.Env):
         
         return position_size
     
+    def _calculate_entry_sl_tp(
+        self,
+        entry_price: float,
+        direction: str
+    ) -> Tuple[Optional[float], Optional[float]]:
+        """
+        Calculate fixed SL/TP prices at entry time using ATR.
+        
+        SL/TP are calculated once at entry and stored in the Position.
+        They do not change during the life of the position.
+        
+        Args:
+            entry_price: Position entry price
+            direction: "long" or "short"
+            
+        Returns:
+            Tuple of (stop_loss_price, take_profit_price) or (None, None) if ATR unavailable
+        """
+        if not self.use_atr_sl_tp:
+            return None, None
+        
+        atr = self.get_current_atr()
+        if atr is None or atr <= 0:
+            return None, None
+        
+        sl_distance = atr * self.atr_sl_multiplier
+        tp_distance = atr * self.atr_tp_multiplier
+        
+        if direction == "long":
+            sl_price = entry_price - sl_distance
+            tp_price = entry_price + tp_distance
+        else:  # short
+            sl_price = entry_price + sl_distance
+            tp_price = entry_price - tp_distance
+        
+        return sl_price, tp_price
+    
     def _get_observation(self) -> np.ndarray:
         """
         Get the current observation (market state features).
@@ -371,6 +421,36 @@ class TradingEnvironment(gym.Env):
         else:
             # Use first numeric column as fallback
             return float(self.data.iloc[step][self.feature_columns[0]])
+    
+    def get_current_atr(self) -> Optional[float]:
+        """
+        Get the current ATR (Average True Range) value.
+        
+        Returns raw ATR if 'atr' column exists, or calculates it from 'atr_rel'
+        and close price if available. Returns None if ATR cannot be determined.
+        
+        Returns:
+            Current ATR value or None
+        """
+        if self.current_step >= len(self.data):
+            step = len(self.data) - 1
+        else:
+            step = self.current_step
+        
+        row = self.data.iloc[step]
+        
+        # Option 1: Raw ATR column exists
+        if 'atr' in self.data.columns:
+            return float(row['atr'])
+        
+        # Option 2: Calculate from atr_rel (atr_rel = log(ATR) - log(close))
+        # So ATR = close * exp(atr_rel)
+        if 'atr_rel' in self.data.columns:
+            close = self._get_current_price()
+            atr_rel = float(row['atr_rel'])
+            return close * np.exp(atr_rel)
+        
+        return None
     
     def _is_terminated(self) -> bool:
         """
